@@ -2,27 +2,18 @@
 # --------------------------------------------------------------
 # Streamlit app: explore HU thresholds vs whole‑body DXA
 # --------------------------------------------------------------
-import numpy as np
-import pandas as pd
-import streamlit as st
+import io, requests, gdown, numpy as np, pandas as pd, streamlit as st
 from pathlib import Path
 from sklearn.metrics import roc_auc_score, confusion_matrix
-
-# ---------- locate dataset (relative path) --------------------
-ROOT = Path(__file__).parent
-DATA_PATH = ROOT / "refDEXA_and_HU.xlsx"           # keep in repo root
 
 # ---------- DXA columns ---------------------------------------
 COL_DXA_TERN   = "diagnosisdexa"                 # 0 / 1 / 2
 COL_DXA_OPBIN  = "wholedxa_op_vs_no_op"          # 1 = osteoporosis
 COL_DXA_ABNBIN = "wholedxa_abnormal_vs_normal"   # 1 = osteopenia + osteoporosis
-
 HU_COLS = [f"hu_{x}" for x in
            ("t8", "t9", "t10", "t11", "t12", "l1", "l2", "l3", "l4")]
 
-# ---------- cached loader: fetch once, cache in RAM -----------------
-import gdown, io, requests
-
+# ---------- cached loader: downloads once, then caches ---------
 @st.cache_data
 def load_df() -> pd.DataFrame:
     file_id  = st.secrets["data"]["gdrive_file_id"]
@@ -31,17 +22,28 @@ def load_df() -> pd.DataFrame:
     if ext == "parquet":
         tmp_path = gdown.download(id=file_id, quiet=True, fuzzy=True)
         df = pd.read_parquet(tmp_path)
-    else:  # assume .xlsx
+    else:                                      # assume Excel
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         content = requests.get(url, timeout=60).content
-        df = pd.read_excel(io.BytesIO(content))   # needs openpyxl
+        df = pd.read_excel(io.BytesIO(content))  # needs openpyxl
     df.columns = (df.columns.str.strip()
                   .str.lower().str.replace(" ", "_"))
     if "median_hu" not in df.columns:
-        hu_cols = [c for c in df.columns if c.startswith("hu_")]
-        df["median_hu"] = df[hu_cols].median(axis=1, skipna=True)
+        df["median_hu"] = df[HU_COLS].median(axis=1, skipna=True)
     return df.dropna(subset=["median_hu",
                              COL_DXA_TERN, COL_DXA_OPBIN, COL_DXA_ABNBIN])
+
+df = load_df()
+st.sidebar.success(f"Dataset loaded: {len(df):,} rows")
+
+# ---------- sidebar: HU thresholds -----------------------------
+st.sidebar.header("HU thresholds")
+op_T  = st.sidebar.slider("Osteoporosis HU (≤)", 55, 120, 110, step=1)
+pen_T = st.sidebar.slider("Osteopenia HU (≤)",   100, 170, 160, step=1)
+
+if op_T >= pen_T:
+    st.sidebar.error("Osteoporosis HU must be lower than osteopenia HU")
+    st.stop()
 
 # ---------- classify CT ---------------------------------------
 ct_diag = np.select(
@@ -49,9 +51,9 @@ ct_diag = np.select(
      df["median_hu"] <= pen_T],
     [2, 1], default=0
 )
-df["ct_diag"]               = ct_diag
-df["ct_bin_op"]             = (ct_diag == 2).astype(int)
-df["ct_bin_abn"]            = (ct_diag >= 1).astype(int)
+df["ct_diag"]      = ct_diag
+df["ct_bin_op"]    = (ct_diag == 2).astype(int)
+df["ct_bin_abn"]   = (ct_diag >= 1).astype(int)
 
 # ---------- metric helper -------------------------------------
 def binary_metrics(y_true, y_pred, score):
@@ -87,12 +89,11 @@ st.markdown(
     f"Osteopenia ≤ **{pen_T} HU** (and > {op_T})"
 )
 
-
-col1, col2 = st.columns(2)
-with col1:
+c1, c2 = st.columns(2)
+with c1:
     st.subheader("Osteoporosis vs No‑OP")
     st.table({k: f"{v:.3f}" for k, v in metrics_op.items()})
-with col2:
+with c2:
     st.subheader("Abnormal vs Normal")
     st.table({k: f"{v:.3f}" for k, v in metrics_abn.items()})
 
