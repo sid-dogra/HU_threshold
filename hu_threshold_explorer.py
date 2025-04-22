@@ -41,7 +41,6 @@ def load_df() -> pd.DataFrame:
                              COL_DXA_TERN, COL_DXA_OPBIN, COL_DXA_ABNBIN])
 
 df = load_df()
-st.sidebar.success(f"Dataset loaded: {len(df):,} rows")
 
 # ------------ HU threshold controls -----------------------------------------
 st.sidebar.header("HU thresholds")
