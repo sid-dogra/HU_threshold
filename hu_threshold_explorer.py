@@ -9,25 +9,34 @@ COL_DXA_ABNBIN = "wholedxa_abnormal_vs_normal"
 HU_COLS = [f"hu_{x}" for x in
            ("t8", "t9", "t10", "t11", "t12", "l1", "l2", "l3", "l4")]
 
-# ------------ cached loader --------------------------------------------------
+import gdown, tempfile, io, requests
 @st.cache_data
 def load_df() -> pd.DataFrame:
-    # → secrets must contain [data] gdrive_file_id, file_ext
-    sec = st.secrets["data"]
+    """Download once from Google Drive and cache in RAM/Disk."""
+    sec      = st.secrets["data"]          # ← make sure this exists!
     file_id  = sec["gdrive_file_id"]
-    ext      = sec.get("file_ext", "parquet")
+    ext      = sec.get("file_ext", "xlsx") # "xlsx" or "parquet"
 
     if ext == "parquet":
-        tmp = gdown.download(id=file_id, quiet=True, fuzzy=True)
-        df = pd.read_parquet(tmp)
-    else:
-        url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        buf = io.BytesIO(requests.get(url, timeout=60).content)
-        df  = pd.read_excel(buf)                 # needs openpyxl
+        tmp_path = gdown.download(id=file_id, quiet=True, fuzzy=True)
+        df = pd.read_parquet(tmp_path)
+
+    else:  # Excel
+        tmp_path = gdown.download(id=file_id, quiet=True, fuzzy=True)
+        # pandas will pick openpyxl automatically
+        df = pd.read_excel(tmp_path, engine="openpyxl")
+
+    # ---------- normalise column names -----------------------------
     df.columns = (df.columns.str.strip()
-                  .str.lower().str.replace(" ", "_"))
+                            .str.lower()
+                            .str.replace(" ", "_"))
+
+    # ---------- add median_hu if not present -----------------------
     if "median_hu" not in df.columns:
-        df["median_hu"] = df[HU_COLS].median(axis=1, skipna=True)
+        hu_cols = [c for c in df.columns if c.startswith("hu_")]
+        df["median_hu"] = df[hu_cols].median(axis=1, skipna=True)
+
+    # ---------- return only rows with complete DXA -----------------
     return df.dropna(subset=["median_hu",
                              COL_DXA_TERN, COL_DXA_OPBIN, COL_DXA_ABNBIN])
 
