@@ -82,7 +82,11 @@ cont_table = (
 
 # ---------- display -------------------------------------------
 st.title("HU Threshold Explorer  –  Whole‑body DXA Reference")
-st.markdown(f"Osteoporosis < **{op_T} HU**   ·   Osteopenia < **{pen_T} HU**")
+st.markdown(
+    f"Osteoporosis ≤ **{op_T} HU**   ·   "
+    f"Osteopenia ≤ **{pen_T} HU** (and > {op_T})"
+)
+
 
 col1, col2 = st.columns(2)
 with col1:
